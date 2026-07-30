@@ -26,4 +26,4 @@ install_manifest.txt
 *.DS_Store
 
 # Agent
-.skills/
+skills/
