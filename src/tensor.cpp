@@ -4,11 +4,11 @@
 
 Tensor::Tensor(const std::vector<int>& shape) {
 
-    // SHAPES
+    // 1. Shape
 
     shape_ = shape;
 
-    // STRIDES
+    // 2. Strides
 
     // Strides define how many elements to skip in the flat array
     // to move one step along each dimension.
@@ -29,15 +29,9 @@ Tensor::Tensor(const std::vector<int>& shape) {
         strides_[i] = strides_[i+1] * shape_[i+1];
     }
 
-    // DATA
+    // 3. Data 
 
-    int data_size {1};
-
-    for (int dim: shape_){
-        data_size*=dim;
-    }
-
-    data_.resize(data_size);
+    data_.resize(size());
 
 }
 
@@ -73,11 +67,14 @@ float& Tensor::at(const std::vector<int>& indices) {
 
     int address{};
 
-    // Retrieve the element address
-    for (int i=0; i < strides_.size(); i++) {
-        
-        address += indices[i] * strides_[i];
+    // The tensor is stored as a flat 1D array in memory, even if it is logically
+    // N-dimensional. at() translates multi-dimensional indices into a single flat index.
+    //
+    // Example: shape {2, 3, 4} -> strides {12, 4, 1}
+    //   at({1, 2, 3}) -> address = (1x12) + (2x4) + (3x1) = 23 -> data_[23]
 
+    for (int i = 0; i < strides_.size(); i++) {
+        address += indices[i] * strides_[i];
     }
 
     return data_[address];
