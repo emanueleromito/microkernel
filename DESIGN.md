@@ -37,13 +37,7 @@ Tensor (shape, strides, dtype, device)
   ├──► Quantize (fake_quantize, calibrate, pack/unpack)
   │
   ├──► CUDA Kernels          ├──► CPU Backend
-  │    fp32 matmul (naive)    │    naive loops
-  │    fp32 matmul (tiled)    │    reference for testing
-  │    fp16 matmul            │
-  │    int8 matmul            │
-  │    int4 packed matmul     │
-  │    elementwise, reduce    │
-  │    conv2d                 │
+  │                          │
   │
   ▼
 DeviceBuffer (cudaMalloc, cudaFree, host↔device)
