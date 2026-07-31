@@ -154,3 +154,66 @@ TEST_F(TensorFixtureTest, FillOverwritesPreviousValues) {
             for (int k = 0; k < 2; ++k)
                 EXPECT_FLOAT_EQ(t->at<float>({i, j, k}), 2.0f);
 }
+
+// ---------------------------------------------------------------------------
+// TensorInt8Test — at<int8_t>()/fill<int8_t>() round-trip on DType::Int8
+// ---------------------------------------------------------------------------
+
+TEST(TensorInt8Test, FillSetsAllElementsToValue) {
+    Tensor t({2, 3}, DType::Int8);
+    t.fill<int8_t>(7);
+
+    for (int i = 0; i < 2; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            EXPECT_EQ(t.at<int8_t>({i, j}), 7)
+                << "Mismatch at [" << i << ", " << j << "]";
+        }
+    }
+}
+
+TEST(TensorInt8Test, FillWithNegativeValue) {
+    Tensor t({2, 2}, DType::Int8);
+    t.fill<int8_t>(-42);
+
+    for (int i = 0; i < 2; ++i) {
+        for (int j = 0; j < 2; ++j) {
+            EXPECT_EQ(t.at<int8_t>({i, j}), -42);
+        }
+    }
+}
+
+TEST(TensorInt8Test, WriteAndReadBack2D) {
+    Tensor t({3, 4}, DType::Int8);
+    t.at<int8_t>({1, 2}) = 9;
+    EXPECT_EQ(t.at<int8_t>({1, 2}), 9);
+}
+
+TEST(TensorInt8Test, IndependentElementsDoNotAlias) {
+    Tensor t({3, 3}, DType::Int8);
+    t.fill<int8_t>(0);
+    t.at<int8_t>({0, 0}) = 1;
+    t.at<int8_t>({1, 1}) = 2;
+    t.at<int8_t>({2, 2}) = 3;
+
+    EXPECT_EQ(t.at<int8_t>({0, 0}), 1);
+    EXPECT_EQ(t.at<int8_t>({1, 1}), 2);
+    EXPECT_EQ(t.at<int8_t>({2, 2}), 3);
+    // Off-diagonal elements must remain zero.
+    EXPECT_EQ(t.at<int8_t>({0, 1}), 0);
+    EXPECT_EQ(t.at<int8_t>({1, 0}), 0);
+}
+
+TEST(TensorInt8Test, NbytesMatchesOneBytePerElement) {
+    Tensor t({2, 3, 4}, DType::Int8);
+    EXPECT_EQ(t.nbytes(), static_cast<size_t>(t.size()));
+}
+
+TEST(TensorInt8Test, AtWithMismatchedTypeThrows) {
+    Tensor t({2, 2}, DType::Int8);
+    EXPECT_THROW(t.at<float>({0, 0}), std::invalid_argument);
+}
+
+TEST(TensorInt8Test, FillWithMismatchedTypeThrows) {
+    Tensor t({2, 2}, DType::Int8);
+    EXPECT_THROW(t.fill<float>(1.0f), std::invalid_argument);
+}
