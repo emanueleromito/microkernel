@@ -36,12 +36,6 @@ Tensor::Tensor(const std::vector<int>& shape, DType dtype) {
 
 }
 
-DType Tensor::dtype() const {
-
-    return dtype_;
-
-}
-
 int Tensor::size() const {
 
     int data_size {1};
@@ -60,4 +54,20 @@ size_t Tensor::nbytes() const {
 
 }
 
+DType Tensor::dtype() const {
 
+    return dtype_;
+
+}
+
+const std::vector<int>& Tensor::shape() const {
+
+return shape_;
+
+}
+
+size_t Tensor::ndim() const {
+
+return shape_.size();
+
+}

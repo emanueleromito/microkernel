@@ -20,7 +20,10 @@ class Tensor{
 
         int size() const;
         size_t nbytes() const;
+
         DType dtype() const;
+        const std::vector<int>& shape() const;
+        size_t ndim() const;
 
         
         template <typename T> T& at(const std::vector<int>& indices) {
