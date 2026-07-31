@@ -8,6 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Library
 add_library(microkernel
     src/tensor.cpp
+    src/dtype.cpp
 )
 
 target_include_directories(microkernel

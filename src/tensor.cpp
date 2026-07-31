@@ -2,11 +2,12 @@
 
 // Constructor
 
-Tensor::Tensor(const std::vector<int>& shape) {
+Tensor::Tensor(const std::vector<int>& shape, DType dtype) {
 
     // 1. Shape
 
     shape_ = shape;
+    dtype_ = dtype;
 
     // 2. Strides
 
@@ -31,11 +32,15 @@ Tensor::Tensor(const std::vector<int>& shape) {
 
     // 3. Data 
 
-    data_.resize(size());
+    data_.resize(nbytes());
 
 }
 
-// Size
+DType Tensor::dtype() const {
+
+    return dtype_;
+
+}
 
 int Tensor::size() const {
 
@@ -49,34 +54,10 @@ int Tensor::size() const {
 
 }
 
-// Fill
+size_t Tensor::nbytes() const {
 
-void Tensor::fill(float value) {
-
-    for (float& element: data_) {
-
-        element = value;
-
-    }
+    return element_size(dtype_) * size();
 
 }
 
-// At
 
-float& Tensor::at(const std::vector<int>& indices) {
-
-    int address{};
-
-    // The tensor is stored as a flat 1D array in memory, even if it is logically
-    // N-dimensional. at() translates multi-dimensional indices into a single flat index.
-    //
-    // Example: shape {2, 3, 4} -> strides {12, 4, 1}
-    //   at({1, 2, 3}) -> address = (1x12) + (2x4) + (3x1) = 23 -> data_[23]
-
-    for (int i = 0; i < strides_.size(); i++) {
-        address += indices[i] * strides_[i];
-    }
-
-    return data_[address];
-
-}
