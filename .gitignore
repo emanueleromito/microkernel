@@ -27,3 +27,6 @@ install_manifest.txt
 
 # Agent
 skills/
+DESIGN.md
+IMPLEMENTATION_PLAN.md
+WORKFLOW.md
