@@ -35,3 +35,7 @@ include(GoogleTest)
 add_executable(test_tensor tests/test_tensor.cpp)
 target_link_libraries(test_tensor PRIVATE microkernel GTest::gtest GTest::gtest_main)
 gtest_discover_tests(test_tensor)
+
+add_executable(test_dtype tests/test_dtype.cpp)
+target_link_libraries(test_dtype PRIVATE microkernel GTest::gtest GTest::gtest_main)
+gtest_discover_tests(test_dtype)

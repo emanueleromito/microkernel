@@ -248,7 +248,7 @@ uint32_t half_to_float_bits(const uint16_t value) noexcept {
 
     uint32_t new_exp = exp16 - 15 + 127;
     uint32_t mant32 = mant16 << 13;
-    return sign16 | (new_exp << 23) | mant32;
+    return sign16 << 31 | (new_exp << 23) | mant32;
 
 }
 
