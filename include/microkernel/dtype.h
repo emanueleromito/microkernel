@@ -52,5 +52,8 @@ template <> struct dtype_of<Half> {
 uint16_t float_to_half_bits(const uint32_t value) noexcept;
 uint32_t half_to_float_bits(const uint16_t value) noexcept;
 
+int8_t unpack_int4(std::byte b, bool high_nibble);
+std::byte pack_int4(std::byte b, bool high_nibble, int8_t value);
+
 size_t element_size(DType dtype);
 std::string dtype_to_string(DType dtype);

@@ -14,6 +14,8 @@ class Tensor{
         std::vector<int> strides_;
         DType dtype_;
 
+        int get_flat_index(const std::vector<int>& indices) const;
+
 
     public:
         Tensor(const std::vector<int>& shape, DType dtype = DType::Float32);
@@ -32,25 +34,7 @@ class Tensor{
                 " does not match tensor dtype " + dtype_to_string(dtype_) + " .");
             }
 
-            // Flat index = sum over all dimensions i of indices[i] * strides_[i]
-            // e.g. for shape (2,3,2) with strides (6,2,1), indices {1,2,0}
-            // -> flat = 1*6 + 2*2 + 0*1 = 10
-
-            int flat_index {0};
-
-            for (int i=0; i < (indices.size() ); i++){
-
-            if (indices[i] < 0 || indices[i] >= shape_[i]) {
-
-                throw std::out_of_range("Index " + std::to_string(indices[i]) + 
-                " out of range for dimension " + std::to_string(i) + " with shape " +
-                std::to_string(shape_[i]));
-                
-            }
-
-            flat_index += indices[i] * strides_[i];
-
-            }
+            int flat_index = get_flat_index(indices);
 
             int byte_index = flat_index * sizeof(T);
             // .data() returns a pointer of the first element of the byte vector data_
@@ -73,25 +57,7 @@ class Tensor{
                 " does not match tensor dtype " + dtype_to_string(dtype_) + " .");
             }
 
-            // Flat index = sum over all dimensions i of indices[i] * strides_[i]
-            // e.g. for shape (2,3,2) with strides (6,2,1), indices {1,2,0}
-            // -> flat = 1*6 + 2*2 + 0*1 = 10
-
-            int flat_index {0};
-
-            for (int i=0; i < (indices.size() ); i++){
-
-            if (indices[i] < 0 || indices[i] >= shape_[i]) {
-
-                throw std::out_of_range("Index " + std::to_string(indices[i]) + 
-                " out of range for dimension " + std::to_string(i) + " with shape " +
-                std::to_string(shape_[i]));
-                
-            }
-
-            flat_index += indices[i] * strides_[i];
-
-            }
+            int flat_index = get_flat_index(indices);
 
             int byte_index = flat_index * sizeof(T);
             // .data() returns a pointer of the first element of the byte vector data_
@@ -123,4 +89,7 @@ class Tensor{
 
         }
 
+
+        int8_t get_packed(const std::vector<int>& indices) const;
+        void set_packed(const std::vector<int>& indices, int8_t value);
 };

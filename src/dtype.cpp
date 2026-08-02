@@ -280,3 +280,86 @@ Half::operator float() const {
     return return_value;
 
 }
+
+int8_t unpack_int4(std::byte b, bool high_nibble) {
+
+    uint8_t working_int = std::to_integer<uint8_t>(b);
+
+    if(high_nibble){
+
+        // High nibble lives in bits 7-4. Mask with 0xF0 to zero out the low nibble (bits 3-0,
+        // which belong to the other packed element, not this one), then shift right by 4 to
+        // bring those bits down to positions 3-0.
+        working_int = (working_int & 0xF0) >> 4;
+
+    }
+
+    else {
+
+        // Low nibble lives in bits 3-0, already at the bottom.
+        working_int = (working_int & 0x0F);
+
+    }
+
+    // At this point working_int is a raw 0-15 value -- correct magnitude, but not yet a valid
+    // signed number. Int4 is signed two's complement (-8..7): values 0-7 are already correct
+    // as-is, but 8-15 are meant to represent -8..-1 and currently read as positive (e.g. 15
+    // should be -1, but right now it reads as plain 15).
+    //
+    // Note this is NOT sign-magnitude (a separate sign bit + a magnitude, e.g. -1 = "1" + "001").
+    // C++ signed integers (int8_t included) are two's complement: the top bit has a NEGATIVE
+    // place value instead of a dedicated sign flag. In 4 bits that means place values
+    // (-8, 4, 2, 1), so 1111 = -8+4+2+1 = -1, and 1000 = -8+0+0+0 = -8. This is also why
+    // 1 + (-1) works out to 0 using plain binary addition with the overflow bit discarded --
+    // two's complement is what lets hardware add/subtract signed numbers with the exact same
+    // circuitry as unsigned, no separate sign handling required.
+    //
+    // Sign extension fixes the width mismatch: check whether bit 3 (the 4-bit value's own sign
+    // bit) is set, and if so, propagate that sign into the upper bits of the 8-bit result --
+    // either by explicitly OR-ing in 0xF0 when bit 3 is set, or via the
+    // shift-left-4-then-arithmetic-shift-right-4 trick discussed earlier. Return as int8_t.
+
+
+    if ( working_int & 0x8 ) {
+
+        working_int = working_int | 0xF0;
+
+    }
+
+    return working_int;
+
+}
+
+std::byte pack_int4(std::byte b, bool high_nibble, int8_t value) {
+
+    // reject values that don't fit in signed 4 bits
+    if (value < -8 || value > 7) {
+
+        throw std::out_of_range("Value " + std::to_string(value) + " is outside the representable int4" +
+        " range [-8, 7].");
+
+    }
+
+    uint8_t working_value = static_cast<uint8_t>(value) & 0x0F;
+
+    // existing byte, as a plain integer we can mask/shift
+    uint8_t working_int = std::to_integer<uint8_t>(b);
+
+    if(high_nibble) {
+
+        // clear bits 7-4, OR in the new nibble shifted into place
+        working_int = (working_int & 0x0F) | (working_value << 4);
+
+    }
+
+    else {
+
+        // clear bits 3-0, OR in the new nibble (already in place, no shift)
+        working_int = (working_int & 0xF0) | (working_value);
+
+    }
+
+    // back to std::byte for the return type
+    return static_cast<std::byte>(working_int);
+
+}
