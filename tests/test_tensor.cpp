@@ -415,3 +415,338 @@ TEST(TensorConstAtTest, ConstOverloadReadsWrittenValue) {
     t.at<float>({1, 1}) = 42.0f;
     EXPECT_FLOAT_EQ(read_const(t, {1, 1}), 42.0f);
 }
+
+// ---------------------------------------------------------------------------
+// TensorArithmeticTest — operator+, operator-, operator* (element-wise)
+// ---------------------------------------------------------------------------
+
+TEST(TensorArithmeticTest, AddFloat32) {
+    Tensor a({2, 2});
+    Tensor b({2, 2});
+    a.fill(2.0f);
+    b.fill(3.0f);
+
+    Tensor c = a + b;
+
+    for (int i = 0; i < 2; ++i)
+        for (int j = 0; j < 2; ++j)
+            EXPECT_FLOAT_EQ(c.at<float>({i, j}), 5.0f);
+}
+
+TEST(TensorArithmeticTest, SubtractFloat32) {
+    Tensor a({2, 2});
+    Tensor b({2, 2});
+    a.fill(5.0f);
+    b.fill(3.0f);
+
+    Tensor c = a - b;
+
+    for (int i = 0; i < 2; ++i)
+        for (int j = 0; j < 2; ++j)
+            EXPECT_FLOAT_EQ(c.at<float>({i, j}), 2.0f);
+}
+
+TEST(TensorArithmeticTest, MultiplyFloat32) {
+    Tensor a({2, 2});
+    Tensor b({2, 2});
+    a.fill(4.0f);
+    b.fill(2.5f);
+
+    Tensor c = a * b;
+
+    for (int i = 0; i < 2; ++i)
+        for (int j = 0; j < 2; ++j)
+            EXPECT_FLOAT_EQ(c.at<float>({i, j}), 10.0f);
+}
+
+TEST(TensorArithmeticTest, AddFloat32PerElementValues) {
+    // Distinct per-element values, not a uniform fill -- catches index-mapping
+    // bugs that a uniform fill() would hide.
+    Tensor a({2, 2});
+    Tensor b({2, 2});
+    a.at<float>({0, 0}) = 1.0f; a.at<float>({0, 1}) = 2.0f;
+    a.at<float>({1, 0}) = 3.0f; a.at<float>({1, 1}) = 4.0f;
+    b.at<float>({0, 0}) = 10.0f; b.at<float>({0, 1}) = 20.0f;
+    b.at<float>({1, 0}) = 30.0f; b.at<float>({1, 1}) = 40.0f;
+
+    Tensor c = a + b;
+
+    EXPECT_FLOAT_EQ(c.at<float>({0, 0}), 11.0f);
+    EXPECT_FLOAT_EQ(c.at<float>({0, 1}), 22.0f);
+    EXPECT_FLOAT_EQ(c.at<float>({1, 0}), 33.0f);
+    EXPECT_FLOAT_EQ(c.at<float>({1, 1}), 44.0f);
+}
+
+TEST(TensorArithmeticTest, AddDoesNotMutateOperands) {
+    Tensor a({2});
+    Tensor b({2});
+    a.fill(1.0f);
+    b.fill(2.0f);
+
+    Tensor c = a + b;
+
+    EXPECT_FLOAT_EQ(a.at<float>({0}), 1.0f);
+    EXPECT_FLOAT_EQ(b.at<float>({0}), 2.0f);
+}
+
+TEST(TensorArithmeticTest, AddNegativeValues) {
+    Tensor a({2});
+    Tensor b({2});
+    a.fill(-3.0f);
+    b.fill(5.0f);
+
+    Tensor c = a + b;
+
+    EXPECT_FLOAT_EQ(c.at<float>({0}), 2.0f);
+}
+
+TEST(TensorArithmeticTest, ResultShapeAndDtypeMatchOperands) {
+    Tensor a({2, 3, 4});
+    Tensor b({2, 3, 4});
+    a.fill(1.0f);
+    b.fill(1.0f);
+
+    Tensor c = a + b;
+
+    EXPECT_EQ(c.shape(), a.shape());
+    EXPECT_EQ(c.dtype(), a.dtype());
+}
+
+TEST(TensorArithmeticTest, ThreeDimensionalAdd) {
+    Tensor a({2, 3, 2});
+    Tensor b({2, 3, 2});
+    a.fill(1.0f);
+    b.fill(1.0f);
+
+    Tensor c = a + b;
+
+    for (int i = 0; i < 2; ++i)
+        for (int j = 0; j < 3; ++j)
+            for (int k = 0; k < 2; ++k)
+                EXPECT_FLOAT_EQ(c.at<float>({i, j, k}), 2.0f);
+}
+
+TEST(TensorArithmeticTest, SingleElementTensorAdd) {
+    Tensor a({1, 1, 1});
+    Tensor b({1, 1, 1});
+    a.fill(9.0f);
+    b.fill(1.0f);
+
+    Tensor c = a + b;
+
+    EXPECT_FLOAT_EQ(c.at<float>({0, 0, 0}), 10.0f);
+}
+
+TEST(TensorArithmeticTest, ChainedOperationsFloat32) {
+    Tensor a({2}); a.fill(2.0f);
+    Tensor b({2}); b.fill(3.0f);
+    Tensor c({2}); c.fill(4.0f);
+
+    Tensor result = (a + b) * c; // (2+3)*4 = 20
+
+    EXPECT_FLOAT_EQ(result.at<float>({0}), 20.0f);
+    EXPECT_FLOAT_EQ(result.at<float>({1}), 20.0f);
+}
+
+TEST(TensorArithmeticTest, AddInt8) {
+    Tensor a({2, 2}, DType::Int8);
+    Tensor b({2, 2}, DType::Int8);
+    a.fill<int8_t>(10);
+    b.fill<int8_t>(-3);
+
+    Tensor c = a + b;
+
+    for (int i = 0; i < 2; ++i)
+        for (int j = 0; j < 2; ++j)
+            EXPECT_EQ(c.at<int8_t>({i, j}), 7);
+}
+
+TEST(TensorArithmeticTest, SubtractInt8) {
+    Tensor a({2}, DType::Int8);
+    Tensor b({2}, DType::Int8);
+    a.fill<int8_t>(5);
+    b.fill<int8_t>(20);
+
+    Tensor c = a - b;
+
+    EXPECT_EQ(c.at<int8_t>({0}), -15);
+}
+
+TEST(TensorArithmeticTest, MultiplyInt8) {
+    Tensor a({2}, DType::Int8);
+    Tensor b({2}, DType::Int8);
+    a.fill<int8_t>(6);
+    b.fill<int8_t>(7);
+
+    Tensor c = a * b;
+
+    EXPECT_EQ(c.at<int8_t>({0}), 42);
+}
+
+TEST(TensorArithmeticTest, AddFloat16) {
+    Tensor a({2}, DType::Float16);
+    Tensor b({2}, DType::Float16);
+    a.fill<Half>(Half(1.5f));
+    b.fill<Half>(Half(2.25f));
+
+    Tensor c = a + b;
+
+    EXPECT_FLOAT_EQ(static_cast<float>(c.at<Half>({0})), 3.75f);
+    EXPECT_EQ(c.dtype(), DType::Float16);
+}
+
+TEST(TensorArithmeticTest, SubtractFloat16) {
+    Tensor a({2}, DType::Float16);
+    Tensor b({2}, DType::Float16);
+    a.fill<Half>(Half(5.0f));
+    b.fill<Half>(Half(1.5f));
+
+    Tensor c = a - b;
+
+    EXPECT_FLOAT_EQ(static_cast<float>(c.at<Half>({0})), 3.5f);
+}
+
+TEST(TensorArithmeticTest, MultiplyFloat16) {
+    Tensor a({2}, DType::Float16);
+    Tensor b({2}, DType::Float16);
+    a.fill<Half>(Half(2.0f));
+    b.fill<Half>(Half(4.0f));
+
+    Tensor c = a * b;
+
+    EXPECT_FLOAT_EQ(static_cast<float>(c.at<Half>({0})), 8.0f);
+}
+
+TEST(TensorArithmeticTest, AddInt4) {
+    Tensor a({2}, DType::Int4);
+    Tensor b({2}, DType::Int4);
+    a.set_packed({0}, 3);
+    a.set_packed({1}, -2);
+    b.set_packed({0}, 2);
+    b.set_packed({1}, 1);
+
+    Tensor c = a + b;
+
+    EXPECT_EQ(c.get_packed({0}), 5);
+    EXPECT_EQ(c.get_packed({1}), -1);
+}
+
+TEST(TensorArithmeticTest, SubtractInt4) {
+    Tensor a({2}, DType::Int4);
+    Tensor b({2}, DType::Int4);
+    a.set_packed({0}, 7);
+    a.set_packed({1}, -8);
+    b.set_packed({0}, 3);
+    b.set_packed({1}, -3);
+
+    Tensor c = a - b;
+
+    EXPECT_EQ(c.get_packed({0}), 4);
+    EXPECT_EQ(c.get_packed({1}), -5);
+}
+
+TEST(TensorArithmeticTest, MultiplyInt4WithinRange) {
+    Tensor a({2}, DType::Int4);
+    Tensor b({2}, DType::Int4);
+    a.set_packed({0}, 2);
+    a.set_packed({1}, -2);
+    b.set_packed({0}, 3);
+    b.set_packed({1}, 3);
+
+    Tensor c = a * b;
+
+    EXPECT_EQ(c.get_packed({0}), 6);
+    EXPECT_EQ(c.get_packed({1}), -6);
+}
+
+TEST(TensorArithmeticTest, AddInt4OddSizeDoesNotAliasNeighborNibble) {
+    // 3 elements pack into 2 bytes -- verifies odd-length packing survives
+    // binary_op's byte/nibble loop intact, same concern as the existing
+    // TensorInt4Test.OddSizeRoundsUpToWholeByte case.
+    Tensor a({3}, DType::Int4);
+    Tensor b({3}, DType::Int4);
+    a.set_packed({0}, 1); a.set_packed({1}, 2); a.set_packed({2}, 3);
+    b.set_packed({0}, 1); b.set_packed({1}, 1); b.set_packed({2}, 1);
+
+    Tensor c = a + b;
+
+    EXPECT_EQ(c.get_packed({0}), 2);
+    EXPECT_EQ(c.get_packed({1}), 3);
+    EXPECT_EQ(c.get_packed({2}), 4);
+}
+
+TEST(TensorArithmeticTest, AddInt4OverflowThrows) {
+    // 7 + 7 = 14, outside Int4's representable [-8, 7] range -- pack_int4
+    // must reject it rather than silently wrapping.
+    Tensor a({1}, DType::Int4);
+    Tensor b({1}, DType::Int4);
+    a.set_packed({0}, 7);
+    b.set_packed({0}, 7);
+
+    EXPECT_THROW(a + b, std::out_of_range);
+}
+
+TEST(TensorArithmeticTest, AddInt4UnderflowThrows) {
+    // -8 + -8 = -16, also outside [-8, 7].
+    Tensor a({1}, DType::Int4);
+    Tensor b({1}, DType::Int4);
+    a.set_packed({0}, -8);
+    b.set_packed({0}, -8);
+
+    EXPECT_THROW(a + b, std::out_of_range);
+}
+
+TEST(TensorArithmeticTest, AddShapeMismatchThrows) {
+    Tensor a({2, 2});
+    Tensor b({3, 3});
+    a.fill(1.0f);
+    b.fill(1.0f);
+
+    EXPECT_THROW(a + b, std::invalid_argument);
+}
+
+TEST(TensorArithmeticTest, SubtractShapeMismatchThrows) {
+    Tensor a({2, 2});
+    Tensor b({2, 3});
+    a.fill(1.0f);
+    b.fill(1.0f);
+
+    EXPECT_THROW(a - b, std::invalid_argument);
+}
+
+TEST(TensorArithmeticTest, MultiplyShapeMismatchThrows) {
+    Tensor a({4});
+    Tensor b({5});
+    a.fill(1.0f);
+    b.fill(1.0f);
+
+    EXPECT_THROW(a * b, std::invalid_argument);
+}
+
+TEST(TensorArithmeticTest, AddDtypeMismatchThrows) {
+    Tensor a({2, 2}, DType::Float32);
+    Tensor b({2, 2}, DType::Int8);
+    a.fill(1.0f);
+    b.fill<int8_t>(1);
+
+    EXPECT_THROW(a + b, std::invalid_argument);
+}
+
+TEST(TensorArithmeticTest, SubtractDtypeMismatchThrows) {
+    Tensor a({2}, DType::Float32);
+    Tensor b({2}, DType::Float16);
+    a.fill(1.0f);
+    b.fill<Half>(Half(1.0f));
+
+    EXPECT_THROW(a - b, std::invalid_argument);
+}
+
+TEST(TensorArithmeticTest, MultiplyDtypeMismatchThrows) {
+    Tensor a({2}, DType::Int8);
+    Tensor b({2}, DType::Int4);
+    a.fill<int8_t>(1);
+    b.set_packed({0}, 1);
+    b.set_packed({1}, 1);
+
+    EXPECT_THROW(a * b, std::invalid_argument);
+}

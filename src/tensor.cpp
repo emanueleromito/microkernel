@@ -105,6 +105,131 @@ int Tensor::get_flat_index(const std::vector<int>& indices) const {
 
 }
 
+std::string Tensor::shape_to_string(const std::vector<int>& shape) const {
+
+    std::string stringed_shape;
+
+    stringed_shape += '(';
+
+    for(int i=0; i < shape.size(); i++) {
+
+        stringed_shape += std::to_string(shape[i]);
+
+        if (i!= shape.size() - 1) {
+
+            stringed_shape += ", ";
+
+        }
+
+    }
+
+    stringed_shape += ')';
+
+    return stringed_shape;
+
+}
+
+
+template <typename T, typename Op>
+void Tensor::apply_elementwise(const Tensor& other_tensor, Tensor& result, Op op) const {
+
+    // data_ is stored as raw std::byte, with no type info -- reinterpret_cast reads those
+    // same bytes as if they were a T*, so the loop below can index them as real T values
+    // instead of bytes.
+    const T* this_tensor_pointer = reinterpret_cast<const T*>(data_.data());
+    const T* other_tensor_pointer = reinterpret_cast<const T*>(other_tensor.data_.data());
+    T* result_tensor_pointer = reinterpret_cast<T*>(result.data_.data());
+
+    for (int i=0; i < size(); i++) {
+
+    // op(...) on two Half operands computes in float (Half only converts implicitly to
+    // float, not from it), so the result must be explicitly converted back down to T --
+    // a no-op for float/int8_t, but required for Half since its float constructor is explicit.
+    result_tensor_pointer[i] = T(op(this_tensor_pointer[i], other_tensor_pointer[i]));
+
+    }
+
+}
+
+template <typename Op>
+Tensor Tensor::binary_op(const Tensor& other_tensor, Op op) const {
+
+
+    if (shape_ != other_tensor.shape_) {
+
+        throw std::invalid_argument("Tensor shape: " + Tensor::shape_to_string(shape_) + 
+        " does not match operand Tensor shape: " + Tensor::shape_to_string(other_tensor.shape_) + ".");
+
+    }   
+    
+    if (dtype_ != other_tensor.dtype_ ) {
+
+        throw std::invalid_argument("Tensor dtype: " + dtype_to_string(dtype_) + 
+        " does not match operand Tensor dtype: " + dtype_to_string(other_tensor.dtype_) + ".");
+
+    }
+
+    Tensor result(shape_, dtype_);
+
+    switch (dtype_) {
+
+        case DType::Float32:  apply_elementwise<float>(other_tensor, result, op); break;
+        case DType::Float16:  apply_elementwise<Half>(other_tensor, result, op); break;
+        case DType::Int8:  apply_elementwise<int8_t>(other_tensor, result, op); break;
+        // Int4 has no raw T to hand apply_elementwise; two values share a byte, so this
+        // branch unpacks both operands to int8_t, applies op, and repacks the result nibble
+        // by nibble, same math as get_packed/set_packed.
+        case DType::Int4:
+
+            {
+
+            for (int i=0; i < size(); i++) {
+
+                int byte_index = i / 2;
+                int nibble = i % 2;
+
+                int8_t temp_result = op(unpack_int4(data_[byte_index], nibble),
+                                unpack_int4(other_tensor.data_[byte_index], nibble));
+
+                // pack_int4 needs the byte as it currently stands in result so it only
+                // overwrites this nibble and leaves the other one (already written, or
+                // still zero-initialized) untouched.
+                std::byte existing_byte = result.data_[byte_index];
+
+                std::byte new_byte = pack_int4(existing_byte, nibble, temp_result);
+
+                result.data_[byte_index] = new_byte;
+
+            }
+
+
+            break;
+
+        }
+    }
+
+    return result;
+
+}
+
+Tensor Tensor::operator+(const Tensor& other_tensor) const {
+
+    return binary_op(other_tensor, std::plus<>{});
+
+}
+
+Tensor Tensor::operator-(const Tensor& other_tensor) const {
+
+    return binary_op(other_tensor, std::minus<>{});
+
+}
+
+Tensor Tensor::operator*(const Tensor& other_tensor) const {
+
+    return binary_op(other_tensor, std::multiplies<>{});
+
+}
+
 int8_t Tensor::get_packed(const std::vector<int>& indices) const {
 
     if(dtype_ != DType::Int4) {

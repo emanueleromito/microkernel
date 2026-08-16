@@ -16,9 +16,19 @@ class Tensor{
 
         int get_flat_index(const std::vector<int>& indices) const;
 
+        std::string shape_to_string(const std::vector<int>& shape) const;
+
+        template <typename T, typename Op>
+        void apply_elementwise(const Tensor& other_tensor, Tensor& result, Op op) const;
+        template <typename Op>
+        Tensor binary_op(const Tensor& other_tensor, Op op) const;
 
     public:
         Tensor(const std::vector<int>& shape, DType dtype = DType::Float32);
+
+        Tensor operator+(const Tensor& other_tensor) const;
+        Tensor operator-(const Tensor& other_tensor) const;
+        Tensor operator*(const Tensor& other_tensor) const;
 
         int size() const;
         size_t nbytes() const;
