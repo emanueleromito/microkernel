@@ -30,9 +30,9 @@ Tensor::Tensor(const std::vector<int>& shape, DType dtype) {
         strides_[i] = strides_[i+1] * shape_[i+1];
     }
 
-    // 3. Data 
+    // 3. Data
 
-    data_.resize(nbytes());
+    data_ = std::make_shared<std::vector<std::byte>>(nbytes());
 
 }
 
@@ -136,9 +136,9 @@ void Tensor::apply_elementwise(const Tensor& other_tensor, Tensor& result, Op op
     // data_ is stored as raw std::byte, with no type info -- reinterpret_cast reads those
     // same bytes as if they were a T*, so the loop below can index them as real T values
     // instead of bytes.
-    const T* this_tensor_pointer = reinterpret_cast<const T*>(data_.data());
-    const T* other_tensor_pointer = reinterpret_cast<const T*>(other_tensor.data_.data());
-    T* result_tensor_pointer = reinterpret_cast<T*>(result.data_.data());
+    const T* this_tensor_pointer = reinterpret_cast<const T*>(data_->data());
+    const T* other_tensor_pointer = reinterpret_cast<const T*>(other_tensor.data_->data());
+    T* result_tensor_pointer = reinterpret_cast<T*>(result.data_->data());
 
     for (int i=0; i < size(); i++) {
 
@@ -188,17 +188,17 @@ Tensor Tensor::binary_op(const Tensor& other_tensor, Op op) const {
                 int byte_index = i / 2;
                 int nibble = i % 2;
 
-                int8_t temp_result = op(unpack_int4(data_[byte_index], nibble),
-                                unpack_int4(other_tensor.data_[byte_index], nibble));
+                int8_t temp_result = op(unpack_int4((*data_)[byte_index], nibble),
+                                unpack_int4((*other_tensor.data_)[byte_index], nibble));
 
                 // pack_int4 needs the byte as it currently stands in result so it only
                 // overwrites this nibble and leaves the other one (already written, or
                 // still zero-initialized) untouched.
-                std::byte existing_byte = result.data_[byte_index];
+                std::byte existing_byte = (*result.data_)[byte_index];
 
                 std::byte new_byte = pack_int4(existing_byte, nibble, temp_result);
 
-                result.data_[byte_index] = new_byte;
+                (*result.data_)[byte_index] = new_byte;
 
             }
 
@@ -250,7 +250,7 @@ int8_t Tensor::get_packed(const std::vector<int>& indices) const {
 
     // Read the existing byte out of data_ at that byte index.
 
-    std::byte data_byte =  data_[byte_index];
+    std::byte data_byte =  (*data_)[byte_index];
 
     // Call unpack_int4 with that byte and the high/low nibble flag, return its result directly.
 
@@ -279,7 +279,7 @@ void Tensor::set_packed(const std::vector<int>& indices, int8_t value) {
     // Read the EXISTING byte at that position first -- pack_int4 needs it to avoid clobbering
     // the other nibble packed into the same byte.
 
-    std::byte existing_byte = data_[byte_index];
+    std::byte existing_byte = (*data_)[byte_index];
 
     // Call pack_int4 with the existing byte, the nibble flag, and the new value -- it already
     // validates value is in [-8, 7] and throws if not, so no need to duplicate that check here.
@@ -288,6 +288,6 @@ void Tensor::set_packed(const std::vector<int>& indices, int8_t value) {
 
     // Write the returned byte back into data_ at byte_index.
 
-    data_[byte_index] = data_byte;
+    (*data_)[byte_index] = data_byte;
 
 }

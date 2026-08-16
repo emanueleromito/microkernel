@@ -2,6 +2,7 @@
 
 #include "microkernel/dtype.h"
 #include <vector>
+#include <memory>
 #include <cstddef>
 #include <stdexcept>
 #include <string>
@@ -9,7 +10,7 @@
 class Tensor{
 
     private:
-        std::vector<std::byte> data_;
+        std::shared_ptr<std::vector<std::byte>> data_;
         std::vector<int> shape_;
         std::vector<int> strides_;
         DType dtype_;
@@ -48,7 +49,7 @@ class Tensor{
 
             int byte_index = flat_index * sizeof(T);
             // .data() returns a pointer of the first element of the byte vector data_
-            std::byte* byte_pointer = data_.data();
+            std::byte* byte_pointer = data_->data();
 
             // pointer + index advances the pointer by that many elements of the pointee type
             byte_pointer = byte_pointer + byte_index;
@@ -71,7 +72,7 @@ class Tensor{
 
             int byte_index = flat_index * sizeof(T);
             // .data() returns a pointer of the first element of the byte vector data_
-            const std::byte* byte_pointer = data_.data();
+            const std::byte* byte_pointer = data_->data();
 
             // pointer + index advances the pointer by that many elements of the pointee type
             byte_pointer = byte_pointer + byte_index;
@@ -89,7 +90,7 @@ class Tensor{
                 " does not match tensor dtype " + dtype_to_string(dtype_) + " .");
             }
 
-            T* typed_pointer = reinterpret_cast<T*>(data_.data());
+            T* typed_pointer = reinterpret_cast<T*>(data_->data());
 
             for (int i=0; i < size() ; i++){
 
