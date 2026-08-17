@@ -750,3 +750,303 @@ TEST(TensorArithmeticTest, MultiplyDtypeMismatchThrows) {
 
     EXPECT_THROW(a * b, std::invalid_argument);
 }
+
+// ---------------------------------------------------------------------------
+// TensorTransposeTest — transpose() is a view (shares data_), swaps shape/strides
+// ---------------------------------------------------------------------------
+
+TEST(TensorTransposeTest, SwapsShape) {
+    Tensor t({2, 3});
+    Tensor tt = t.transpose(0, 1);
+
+    std::vector<int> expected{3, 2};
+    EXPECT_EQ(tt.shape(), expected);
+}
+
+TEST(TensorTransposeTest, ReadsCorrectValues) {
+    // t[a,b] = a*3 + b, distinct per element.
+    Tensor t({2, 3});
+    for (int a = 0; a < 2; ++a)
+        for (int b = 0; b < 3; ++b)
+            t.at<float>({a, b}) = static_cast<float>(a * 3 + b);
+
+    Tensor tt = t.transpose(0, 1);
+
+    // tt[i,j] must equal t[j,i].
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 2; ++j)
+            EXPECT_FLOAT_EQ(tt.at<float>({i, j}), t.at<float>({j, i}))
+                << "Mismatch at tt[" << i << "," << j << "]";
+}
+
+TEST(TensorTransposeTest, SharesStorageWithOriginal) {
+    Tensor t({2, 3});
+    t.fill(0.0f);
+
+    Tensor tt = t.transpose(0, 1);
+    tt.at<float>({1, 0}) = 99.0f;
+
+    // tt[1,0] and t[0,1] land on the same flat byte position (flat = 1 either way).
+    EXPECT_FLOAT_EQ(t.at<float>({0, 1}), 99.0f);
+}
+
+TEST(TensorTransposeTest, MutatingOriginalIsVisibleThroughView) {
+    Tensor t({2, 3});
+    t.fill(0.0f);
+
+    Tensor tt = t.transpose(0, 1);
+    t.at<float>({0, 1}) = 42.0f;
+
+    EXPECT_FLOAT_EQ(tt.at<float>({1, 0}), 42.0f);
+}
+
+TEST(TensorTransposeTest, ThreeDimensionalSwapsCorrectDims) {
+    // t[a,b,c] = a*12 + b*4 + c, distinct per element.
+    Tensor t({2, 3, 4});
+    for (int a = 0; a < 2; ++a)
+        for (int b = 0; b < 3; ++b)
+            for (int c = 0; c < 4; ++c)
+                t.at<float>({a, b, c}) = static_cast<float>(a * 12 + b * 4 + c);
+
+    Tensor tt = t.transpose(0, 2); // shape (4,3,2), dim 1 untouched
+
+    std::vector<int> expected{4, 3, 2};
+    EXPECT_EQ(tt.shape(), expected);
+
+    for (int i = 0; i < 4; ++i)
+        for (int j = 0; j < 3; ++j)
+            for (int k = 0; k < 2; ++k)
+                EXPECT_FLOAT_EQ(tt.at<float>({i, j, k}), t.at<float>({k, j, i}))
+                    << "Mismatch at tt[" << i << "," << j << "," << k << "]";
+}
+
+TEST(TensorTransposeTest, SameDimIsIdentity) {
+    Tensor t({2, 3});
+    for (int a = 0; a < 2; ++a)
+        for (int b = 0; b < 3; ++b)
+            t.at<float>({a, b}) = static_cast<float>(a * 3 + b);
+
+    Tensor tt = t.transpose(0, 0);
+
+    EXPECT_EQ(tt.shape(), t.shape());
+    for (int a = 0; a < 2; ++a)
+        for (int b = 0; b < 3; ++b)
+            EXPECT_FLOAT_EQ(tt.at<float>({a, b}), t.at<float>({a, b}));
+}
+
+TEST(TensorTransposeTest, Dim0OutOfRangeThrows) {
+    Tensor t({2, 3});
+    EXPECT_THROW(t.transpose(2, 0), std::out_of_range);
+}
+
+TEST(TensorTransposeTest, Dim1OutOfRangeThrows) {
+    Tensor t({2, 3});
+    EXPECT_THROW(t.transpose(0, 2), std::out_of_range);
+}
+
+TEST(TensorTransposeTest, NegativeDimThrows) {
+    Tensor t({2, 3});
+    EXPECT_THROW(t.transpose(-1, 0), std::out_of_range);
+}
+
+// ---------------------------------------------------------------------------
+// TensorReshapeTest — view when contiguous, copy otherwise (e.g. after transpose)
+// ---------------------------------------------------------------------------
+
+TEST(TensorReshapeTest, ContiguousProducesCorrectShape) {
+    Tensor t({2, 3});
+    t.fill(1.0f);
+
+    Tensor r = t.reshape({6});
+
+    std::vector<int> expected{6};
+    EXPECT_EQ(r.shape(), expected);
+    EXPECT_EQ(r.dtype(), t.dtype());
+}
+
+TEST(TensorReshapeTest, ContiguousPreservesRowMajorOrder) {
+    // t[a,b] = a*3 + b -- flattening row-major should give 0,1,2,3,4,5.
+    Tensor t({2, 3});
+    for (int a = 0; a < 2; ++a)
+        for (int b = 0; b < 3; ++b)
+            t.at<float>({a, b}) = static_cast<float>(a * 3 + b);
+
+    Tensor r = t.reshape({6});
+
+    for (int k = 0; k < 6; ++k)
+        EXPECT_FLOAT_EQ(r.at<float>({k}), static_cast<float>(k));
+}
+
+TEST(TensorReshapeTest, ToDifferentMultiDimShapePreservesOrder) {
+    // (2,3) -> (3,2): same flat sequence 0..5, relabeled into a different shape.
+    Tensor t({2, 3});
+    for (int a = 0; a < 2; ++a)
+        for (int b = 0; b < 3; ++b)
+            t.at<float>({a, b}) = static_cast<float>(a * 3 + b);
+
+    Tensor r = t.reshape({3, 2});
+
+    float expected[3][2] = {{0, 1}, {2, 3}, {4, 5}};
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 2; ++j)
+            EXPECT_FLOAT_EQ(r.at<float>({i, j}), expected[i][j]);
+}
+
+TEST(TensorReshapeTest, ContiguousReshapeIsView) {
+    Tensor t({2, 3});
+    for (int a = 0; a < 2; ++a)
+        for (int b = 0; b < 3; ++b)
+            t.at<float>({a, b}) = static_cast<float>(a * 3 + b);
+
+    Tensor r = t.reshape({6});
+    r.at<float>({3}) = 99.0f; // flat position 3 == t[1,0]
+
+    EXPECT_FLOAT_EQ(t.at<float>({1, 0}), 99.0f);
+}
+
+TEST(TensorReshapeTest, IdentityReshapeKeepsValues) {
+    Tensor t({2, 3});
+    t.fill(5.0f);
+
+    Tensor r = t.reshape({2, 3});
+
+    for (int a = 0; a < 2; ++a)
+        for (int b = 0; b < 3; ++b)
+            EXPECT_FLOAT_EQ(r.at<float>({a, b}), 5.0f);
+}
+
+TEST(TensorReshapeTest, ElementCountMismatchThrows) {
+    Tensor t({2, 3});
+    t.fill(1.0f);
+
+    EXPECT_THROW(t.reshape({5}), std::invalid_argument);
+}
+
+TEST(TensorReshapeTest, AfterTransposeProducesLogicalOrderNotBufferOrder) {
+    // t = [[0,1,2],[3,4,5]]; transpose -> logically [[0,3],[1,4],[2,5]];
+    // flattening that (not the raw pre-transpose buffer) should give 0,3,1,4,2,5.
+    Tensor t({2, 3});
+    for (int a = 0; a < 2; ++a)
+        for (int b = 0; b < 3; ++b)
+            t.at<float>({a, b}) = static_cast<float>(a * 3 + b);
+
+    Tensor tt = t.transpose(0, 1);
+    Tensor r = tt.reshape({6});
+
+    float expected[6] = {0, 3, 1, 4, 2, 5};
+    for (int k = 0; k < 6; ++k)
+        EXPECT_FLOAT_EQ(r.at<float>({k}), expected[k]) << "Mismatch at k=" << k;
+}
+
+TEST(TensorReshapeTest, AfterTransposeIsCopyNotView) {
+    Tensor t({2, 3});
+    t.fill(0.0f);
+
+    Tensor tt = t.transpose(0, 1);
+    Tensor r = tt.reshape({6});
+
+    r.at<float>({0}) = 123.0f;
+
+    // r is a fresh buffer -- mutating it must not disturb t or tt.
+    EXPECT_FLOAT_EQ(t.at<float>({0, 0}), 0.0f);
+    EXPECT_FLOAT_EQ(tt.at<float>({0, 0}), 0.0f);
+}
+
+TEST(TensorReshapeTest, Int8ContiguousView) {
+    Tensor t({2, 2}, DType::Int8);
+    t.at<int8_t>({0, 0}) = 1;
+    t.at<int8_t>({0, 1}) = 2;
+    t.at<int8_t>({1, 0}) = 3;
+    t.at<int8_t>({1, 1}) = 4;
+
+    Tensor r = t.reshape({4});
+
+    int8_t expected[4] = {1, 2, 3, 4};
+    for (int k = 0; k < 4; ++k)
+        EXPECT_EQ(r.at<int8_t>({k}), expected[k]);
+}
+
+TEST(TensorReshapeTest, Int8AfterTransposeCopy) {
+    Tensor t({2, 2}, DType::Int8);
+    t.at<int8_t>({0, 0}) = 1;
+    t.at<int8_t>({0, 1}) = 2;
+    t.at<int8_t>({1, 0}) = 3;
+    t.at<int8_t>({1, 1}) = 4;
+
+    Tensor tt = t.transpose(0, 1); // logically [[1,3],[2,4]]
+    Tensor r = tt.reshape({4});
+
+    int8_t expected[4] = {1, 3, 2, 4};
+    for (int k = 0; k < 4; ++k)
+        EXPECT_EQ(r.at<int8_t>({k}), expected[k]);
+}
+
+TEST(TensorReshapeTest, Float16ContiguousView) {
+    Tensor t({2, 2}, DType::Float16);
+    t.at<Half>({0, 0}) = Half(1.5f);
+    t.at<Half>({0, 1}) = Half(2.5f);
+    t.at<Half>({1, 0}) = Half(3.5f);
+    t.at<Half>({1, 1}) = Half(4.5f);
+
+    Tensor r = t.reshape({4});
+
+    float expected[4] = {1.5f, 2.5f, 3.5f, 4.5f};
+    for (int k = 0; k < 4; ++k)
+        EXPECT_FLOAT_EQ(static_cast<float>(r.at<Half>({k})), expected[k]);
+}
+
+TEST(TensorReshapeTest, Float16AfterTransposeCopy) {
+    Tensor t({2, 2}, DType::Float16);
+    t.at<Half>({0, 0}) = Half(1.5f);
+    t.at<Half>({0, 1}) = Half(2.5f);
+    t.at<Half>({1, 0}) = Half(3.5f);
+    t.at<Half>({1, 1}) = Half(4.5f);
+
+    Tensor tt = t.transpose(0, 1); // logically [[1.5,3.5],[2.5,4.5]]
+    Tensor r = tt.reshape({4});
+
+    float expected[4] = {1.5f, 3.5f, 2.5f, 4.5f};
+    for (int k = 0; k < 4; ++k)
+        EXPECT_FLOAT_EQ(static_cast<float>(r.at<Half>({k})), expected[k]);
+}
+
+TEST(TensorReshapeTest, Int4ContiguousView) {
+    Tensor t({2, 2}, DType::Int4);
+    t.set_packed({0, 0}, -8);
+    t.set_packed({0, 1}, 7);
+    t.set_packed({1, 0}, -1);
+    t.set_packed({1, 1}, 3);
+
+    Tensor r = t.reshape({4});
+
+    int8_t expected[4] = {-8, 7, -1, 3};
+    for (int k = 0; k < 4; ++k)
+        EXPECT_EQ(r.get_packed({k}), expected[k]);
+}
+
+TEST(TensorReshapeTest, Int4AfterTransposeCopy) {
+    // Exercises the byte/nibble packing path in reshape's copy branch, including
+    // negative values, since Int4 has no raw T and packs two values per byte.
+    Tensor t({2, 2}, DType::Int4);
+    t.set_packed({0, 0}, -8);
+    t.set_packed({0, 1}, 7);
+    t.set_packed({1, 0}, -1);
+    t.set_packed({1, 1}, 3);
+
+    Tensor tt = t.transpose(0, 1); // logically [[-8,-1],[7,3]]
+    Tensor r = tt.reshape({4});
+
+    int8_t expected[4] = {-8, -1, 7, 3};
+    for (int k = 0; k < 4; ++k)
+        EXPECT_EQ(r.get_packed({k}), expected[k]) << "Mismatch at k=" << k;
+}
+
+TEST(TensorReshapeTest, DtypePreservedAfterTransposeCopy) {
+    Tensor t({2, 2}, DType::Int8);
+    t.fill<int8_t>(1);
+
+    Tensor tt = t.transpose(0, 1);
+    Tensor r = tt.reshape({4});
+
+    EXPECT_EQ(r.dtype(), DType::Int8);
+}

@@ -1,6 +1,6 @@
 #include "microkernel/tensor.h"
 
-// Constructor
+// Constructor for new Tensor
 
 Tensor::Tensor(const std::vector<int>& shape, DType dtype) {
 
@@ -11,30 +11,174 @@ Tensor::Tensor(const std::vector<int>& shape, DType dtype) {
 
     // 2. Strides
 
-    // Strides define how many elements to skip in the flat array
-    // to move one step along each dimension.
-    // Computed right-to-left: strides[last] = 1,
-    // strides[i] = strides[i+1] * shape[i+1].
-    // Example:
-    // Shapes: 2 - - 3 - - 2
-    // Strides: 6 - - 2 - - 1
-
-    strides_.resize(shape_.size());
-
-    // shape_.size() - 1 access last element of shape_
-    strides_[shape_.size() - 1] = 1;
-
-    // if we have 3 dimensions, shape_.size() returns 3, and we need to calculate 2 strides (last one already done manually)
-    // since we access the vector by indices, we need to also remove 1 value more (-2) to access the 0 and 1 slot of the stride_ vector.
-    for (int i = shape_.size() - 2; i>=0 ; i--) {
-        strides_[i] = strides_[i+1] * shape_[i+1];
-    }
+    strides_ = compute_contiguous_strides(shape_);
 
     // 3. Data
 
     data_ = std::make_shared<std::vector<std::byte>>(nbytes());
 
 }
+
+
+// Strides define how many elements to skip in the flat array to move one step
+// along each dimension. Computed right-to-left: strides[last] = 1,
+// strides[i] = strides[i+1] * shape[i+1].
+// Example:
+// Shapes: 2 - - 3 - - 2
+// Strides: 6 - - 2 - - 1
+std::vector<int> Tensor::compute_contiguous_strides(const std::vector<int>& shape) const {
+
+    std::vector<int> strides(shape.size());
+
+    // shape.size() - 1 accesses the last element of shape
+    strides[shape.size() - 1] = 1;
+
+    // if we have 3 dimensions, shape.size() returns 3, and we need to calculate 2 strides
+    // (last one already done manually) -- since we access the vector by indices, we need
+    // to also remove 1 value more (-2) to access the 0 and 1 slot of the strides vector.
+    for (int i = shape.size() - 2; i >= 0; i--) {
+        strides[i] = strides[i+1] * shape[i+1];
+    }
+
+    return strides;
+
+}
+
+
+// Constructor for reshaped or transposed tensor
+
+Tensor::Tensor(const std::vector<int>& new_shape, const std::vector<int>& new_stride, 
+DType dtype, std::shared_ptr<std::vector<std::byte>> data_pointer) {
+
+    data_ = data_pointer;
+    strides_ = new_stride;
+    shape_ = new_shape;
+    dtype_ = dtype;
+}
+
+
+Tensor Tensor::transpose(int dim0, int dim1) const {
+
+    int n = static_cast<int>(ndim());
+
+    if (dim0 < 0 || dim0 >= n || dim1 < 0 || dim1 >= n) {
+        throw std::out_of_range("transpose: dimension index out of range for tensor with " +
+            std::to_string(n) + " dimensions.");
+    }
+
+    // Swapping the shape entries relabels which dimension is which (dim0 is now
+    // dim1's old size and vice versa) on its own this would just describe a
+    // different tensor, not a transpose of this one.
+    std::vector<int> new_shape = shape_;
+    std::swap(new_shape[dim0], new_shape[dim1]);
+
+    // Swapping the *strides* alongside the shape is what actually makes this a
+    // transpose: indexing the result at [.., dim0, .., dim1, ..] now walks the
+    // buffer using the stride that used to belong to the other dimension, so
+    // element [i, j] in the result reads the same byte as [j, i] did before.
+    // std::swap(a, b) exchanges two values in place (a becomes b's old value,
+    // b becomes a's) -- here it swaps the two vector elements at indices
+    // dim0/dim1, same as a manual temp-variable swap would.
+    std::vector<int> new_strides = strides_;
+    std::swap(new_strides[dim0], new_strides[dim1]);
+
+    return Tensor(new_shape, new_strides, dtype_, data_);
+
+}
+
+// Contiguous -> view (shares data_). Non-contiguous (e.g. after transpose()) -> copy.
+Tensor Tensor::reshape(const std::vector<int>& new_shape) const {
+
+    // total elements requested by new_shape
+    int new_size = 1;
+
+    for (int dim: new_shape){
+        new_size*=dim;
+    }
+
+    // must match this tensor's element count
+    if (new_size!=size()) {
+
+        throw std::invalid_argument("reshape: new shape " + shape_to_string(new_shape) +
+            " has " + std::to_string(new_size) + " elements, but tensor has " +
+            std::to_string(size()) + " elements (shape " + shape_to_string(shape_) + ").");
+
+    }
+
+    // what strides_ would be if *this were contiguous
+    std::vector<int> contiguous_strides = compute_contiguous_strides(shape_);
+
+    if(strides_ == contiguous_strides) {
+
+        // already contiguous -> view, same data_, no copy
+        return Tensor(new_shape, compute_contiguous_strides(new_shape), dtype_, data_);
+
+    } else {
+
+        // fresh, contiguous buffer sized for new_shape
+        Tensor new_tensor = Tensor(new_shape, dtype_);
+
+        // k = flat position, same for source's logical order and new_tensor's buffer
+        for(int k = 0; k < new_tensor.size(); k++) {
+
+            // scratch copy of k, consumed by the loop below
+            int remaining = k;
+
+            // one coordinate per source dimension
+            std::vector<int> indices;
+            indices.resize(ndim());
+
+            // unravel k into indices against shape_
+            for (int dim = ndim() -1 ; dim>=0; dim--) {
+
+                // this dimension's coordinate
+                indices[dim] = remaining % shape_[dim];
+                // strip it off, leaving the next dimension's remainder
+                remaining /= shape_[dim];
+
+            }
+
+            switch (dtype_) {
+
+                case DType::Float32: {
+                    // dst points at new_tensor's buffer, read as float*; read the source
+                    // element at indices (correct even if *this is non-contiguous), write
+                    // it to dst[k] -- new_tensor is contiguous, so slot k is just dst[k].
+                    float* dst = reinterpret_cast<float*>(new_tensor.data_->data());
+                    dst[k] = at<float>(indices);
+                    break;
+                }
+                case DType::Float16: {
+                    Half* dst = reinterpret_cast<Half*>(new_tensor.data_->data());
+                    dst[k] = at<Half>(indices);
+                    break;
+                }
+                case DType::Int8: {
+                    int8_t* dst = reinterpret_cast<int8_t*>(new_tensor.data_->data());
+                    dst[k] = at<int8_t>(indices);
+                    break;
+                }
+                case DType::Int4: {
+                    int8_t value = get_packed(indices);
+                    int byte_index = k / 2;
+                    int nibble = k % 2;
+                    std::byte existing_byte = (*new_tensor.data_)[byte_index];
+                    (*new_tensor.data_)[byte_index] = pack_int4(existing_byte, nibble, value);
+                    break;
+                }
+
+            }
+
+        }
+
+        return new_tensor;
+
+    }
+    
+
+
+}
+
 
 int Tensor::size() const {
 
@@ -46,7 +190,7 @@ int Tensor::size() const {
 
     return data_size;
 
-}
+    }
 
 size_t Tensor::nbytes() const {
 
@@ -128,7 +272,6 @@ std::string Tensor::shape_to_string(const std::vector<int>& shape) const {
     return stringed_shape;
 
 }
-
 
 template <typename T, typename Op>
 void Tensor::apply_elementwise(const Tensor& other_tensor, Tensor& result, Op op) const {

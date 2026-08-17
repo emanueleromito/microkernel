@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 class Tensor{
 
@@ -19,14 +20,24 @@ class Tensor{
 
         std::string shape_to_string(const std::vector<int>& shape) const;
 
+        std::vector<int> compute_contiguous_strides(const std::vector<int>& shape) const;
+
         template <typename T, typename Op>
         void apply_elementwise(const Tensor& other_tensor, Tensor& result, Op op) const;
         template <typename Op>
         Tensor binary_op(const Tensor& other_tensor, Op op) const;
 
+        // reshaped or transposed tensor
+        Tensor(const std::vector<int>& new_shape, const std::vector<int>& new_stride, 
+              DType dtype, std::shared_ptr<std::vector<std::byte>> data_pointer);
+
+
     public:
+        // new tensor
         Tensor(const std::vector<int>& shape, DType dtype = DType::Float32);
 
+        Tensor transpose(int dim0, int dim1) const;
+        Tensor reshape(const std::vector<int>& new_shape) const;
         Tensor operator+(const Tensor& other_tensor) const;
         Tensor operator-(const Tensor& other_tensor) const;
         Tensor operator*(const Tensor& other_tensor) const;
